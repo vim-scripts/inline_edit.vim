@@ -18,7 +18,7 @@ function! inline_edit#PushCursor()
     let b:cursor_position_stack = []
   endif
 
-  call add(b:cursor_position_stack, getpos('.'))
+  call add(b:cursor_position_stack, winsaveview())
 endfunction
 
 " function! inline_edit#PopCursor() {{{2
@@ -30,7 +30,7 @@ function! inline_edit#PopCursor()
     let b:cursor_position_stack = []
   endif
 
-  call setpos('.', remove(b:cursor_position_stack, -1))
+  call winrestview(remove(b:cursor_position_stack, -1))
 endfunction
 
 " function! inline_edit#PeekCursor() {{{2
@@ -48,7 +48,7 @@ endfunction
 " Opens up a new proxy buffer with the contents of a fenced code block in
 " github-flavoured markdown.
 function! inline_edit#MarkdownFencedCode()
-  let start_pattern = '^\s*``` \(.\+\)'
+  let start_pattern = '^\s*```\s*\(.\+\)'
   let end_pattern   = '^\s*```\s*$'
 
   call inline_edit#PushCursor()
@@ -70,6 +70,105 @@ function! inline_edit#MarkdownFencedCode()
   let indent = indent('.')
 
   call inline_edit#PopCursor()
+
+  return [start, end, filetype, indent]
+endfunction
+
+" function! inline_edit#VimEmbeddedScript() {{{2
+"
+" Opens up a new proxy buffer with ruby, python, perl, lua or mzscheme code
+" embedded in vimscript.
+function! inline_edit#VimEmbeddedScript()
+  let start_pattern = '^\s*\(\%(rub\|py\|pe\|mz\|lua\)\S*\)\s*<<\s*\(.*\)$'
+
+  if search(start_pattern, 'Wb') <= 0
+    return []
+  endif
+
+  let start     = line('.') + 1
+  let indent    = indent(line('.'))
+  let language  = substitute(getline('.'), start_pattern, '\1', '')
+  let delimiter = substitute(getline('.'), start_pattern, '\2', '')
+
+  if len(delimiter) == 0
+    let delimiter = '.'
+  endif
+
+  if language =~ '^rub'
+    let sub_filetype = 'ruby'
+  elseif language =~ '^py'
+    let sub_filetype = 'python'
+  elseif language =~ '^pe'
+    let sub_filetype = 'perl'
+  elseif language =~ '^mz'
+    let sub_filetype = 'scheme'
+  elseif language == 'lua'
+    let sub_filetype = 'lua'
+  endif
+
+  if search('^\V'.delimiter.'\$', 'W') <= 0
+    return []
+  endif
+  let end = line('.') - 1
+
+  return [start, end, sub_filetype, indent]
+endfunction
+
+" function! inline_edit#HereDoc() {{{2
+"
+" Opens up a new proxy buffer with the contents of a shell script here
+" document.
+function! inline_edit#HereDoc()
+  " The beginning of a 'here doc' could be variations on any of these
+  " forms:
+  "   <<- "EOF"
+  "   << 'ABC'
+  "   <<WXYZ
+  "   cat <<-EOF > newfile
+  let start_pattern = '<<-\?\s*\(["'']\?\)\(\S*\)\1'
+
+  call inline_edit#PushCursor()
+
+  " find the start of the inline area,
+  " first on the current line, then on any previous lines
+  if search(start_pattern, 'Wc', line('.')) <= 0
+    if search(start_pattern, 'Wcb') <= 0
+      call inline_edit#PopCursor()
+      return []
+    endif
+  endif
+
+  let start = line('.') + 1
+
+  " define the end_pattern based on the token found in start_pattern
+  let end_pattern = '^\s*' . matchlist(getline('.'), start_pattern)[2]
+
+  " This should allow the command to run on the opening << EOF line,
+  " in the middle of the heredoc, or on the closing EOF line.
+  "
+  " Go to the cursor's original position before searching for
+  " end_pattern, but not the line indicating the start of the here doc,
+  " otherwise the ending token might be matched on the opening line.
+  call inline_edit#PopCursor()
+  call inline_edit#PushCursor()
+  " if the start of the new document is after the current line, then move
+  " down one, otherwise stay put.
+  if line('.') < start
+    normal <Down>
+  endif
+
+  " find the end of the inline area
+  if search(end_pattern, 'Wc') <= 0
+    call inline_edit#PopCursor()
+    return []
+  endif
+  let end = line('.') - 1
+
+  call inline_edit#PopCursor()
+
+  " automatic filetype detection
+  let filetype = ''
+  let indent = indent(start)
 
   return [start, end, filetype, indent]
 endfunction

@@ -4,7 +4,7 @@ CONTENTS                                      *inline-edit* *inline-edit-content
     Installation...........................: |inline-edit-installation|
     Usage..................................: |inline-edit-usage|
     Settings...............................: |inline-edit-settings|
-    Internals..............................: |inline-edit-internals|
+    Extending..............................: |inline-edit-extending|
     Issues.................................: |inline-edit-issues|
 
 
@@ -123,7 +123,8 @@ Visual Mode ~
 
 If you'd like to work on an area that's not very well definable, |:InlineEdit|
 also works in visual mode. Selecting an area of the code and executing
-:InlineEdit will open up a proxy buffer with that area.
+":InlineEdit some_filetype" will open up a proxy buffer with that area and set
+the filetype to "some_filetype".
 
 
 ==============================================================================
@@ -142,6 +143,42 @@ If this variable is set to 1, writing the temporary proxy buffer would also
 write the original buffer to its file. If it's 0, the original buffer will be
 modified, but not saved.
 
+                                                 *b:inline_edit_html_like_filetypes*
+>
+    let b:inline_edit_html_like_filetypes = ['coldfusion', 'mako']
+<
+
+Default value: []
+
+This variable should contain additional filetypes to use for the special
+"*html" filetype pattern (:help |inline-edit-extending|). Setting a list of
+filetypes here will make the plugin detect "<script>" and "<style>" tags in
+those as well.
+
+The reason for this is to be able to extend the plugin easier in this specific
+case (editing an html-like filetype).
+
+                                                 *b:inline_edit_proxy_type*
+>
+    let b:inline_proxy_type = 'tempfile'
+<
+
+Default value: "scratch"
+
+This variable can have one of two values, "scratch" or "tempfile".
+
+If it is set to "scratch" (the default), the created proxy buffer is not
+connected to any file. The benefit is that the filename can then be set to be
+an informative string instead of a weird temporary filename. The drawback is
+that you can't run some external commands on this buffer, since there is no
+real backing file.
+
+If it is set to "tempfile", the proxy buffer is actually a temporary file. The
+benefit is that you run external commands that expect an actual file (like
+executing |:make|). The drawback is that the only way to display information
+on the proxy is by hacking the statusline, which may cause issues and can't
+work reliably on all statuslines.
+
 
 ==============================================================================
 EXTENDING                                                *inline-edit-extending*
@@ -149,18 +186,24 @@ EXTENDING                                                *inline-edit-extending*
 
 The variable |g:inline_edit_patterns| is a list of dictionaries. Extending the
 plugin to work for new patterns is a simple matter of adding entries to it.
-Each entry in the list can have one of two formats.
+You can safely assign patterns to the variable in your .vimrc, the plugin
+won't override them.
 
+Each entry in the list can have one of two formats.
 
 Simple ~
 >
-    call add(g:inline_edit_patterns, {
-        \ 'main_filetype':     'vim',
-        \ 'sub_filetype':      'vim',
-        \ 'indent_adjustment': 1,
-        \ 'start':             '\<function\>',    " required
-        \ 'end':               '\<endfunction\>', " required
-        \ })
+    let g:inline_edit_patterns = [
+            \   {
+            \     'main_filetype':     'vim',
+            \     'sub_filetype':      'vim',
+            \     'indent_adjustment': 1,
+            \     'start':             '\<function\>',    " required
+            \     'end':               '\<endfunction\>', " required
+            \   },
+            \
+            \   " ...
+            \ ]
 <
 The dictionary can contain several items, but the only two required ones are
 "start" and "end". They should be regular expressions that are used to find
@@ -175,6 +218,13 @@ the margins of the area to edit. The other entries are as follows:
       This is parsed as a regular expression, so you could set it to, for
       example, "html\|eruby\|php" and have the related patterns work across
       those three filetypes.
+
+      Setting main_filetype to the string "*html" is a special case, since a
+      lot of filetypes are "html-like". This will match any such filetype that
+      I've managed to think of. To extend this pattern to any ones that I've
+      missed, you can set the variable |g:inline_edit_html_like_filetypes| to
+      a list of those additional filetypes. See |inline-edit-settings| for
+      details.
 
     - sub_filetype:
 
@@ -191,12 +241,15 @@ the margins of the area to edit. The other entries are as follows:
 
 
 Callback ~
-
 >
-    call add(g:inline_edit_patterns, {
-        \ 'main_filetype': 'textile',
-        \ 'callback':      'InlineEditTextileBuffer',
-        \ })
+    let g:inline_edit_patterns = [
+            \   {
+            \     'main_filetype': 'textile',
+            \     'callback':      'InlineEditTextileBuffer',
+            \   },
+            \
+            \   " ...
+            \ ]
 <
 If the dictionary contains a "callback" key, its value will be assumed to be a
 function and will be called as a function with no parameters. The result needs
@@ -209,7 +262,7 @@ to be a list of four values in this order:
 This is much more complicated, since the function needs to search for the area
 of interest itself and simply return its start and end. It's also more
 flexible, since it allows for dynamically changing targets. Take a look at the
-function inline_edit#MardkownFencedCode() in "autoload/inline_edit.vim" for
+function inline_edit#MarkdownFencedCode() in "autoload/inline_edit.vim" for
 inspiration.
 
 If the callback function fails to find the area, it should return an empty
